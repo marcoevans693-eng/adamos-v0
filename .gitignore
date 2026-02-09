@@ -16,3 +16,6 @@ env/
 # OS / editor
 .DS_Store
 .vscode/
+
+# AdamOS runtime state
+.adam_os/
