@@ -15,9 +15,13 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 from adam_os.audit.run_ledger import RunLedger
-from adam_os.execution_core.errors import InvalidDispatchRequest, ToolExecutionError, ToolNotFoundError
+from adam_os.execution_core.errors import InvalidDispatchRequest, ToolNotFoundError
 from adam_os.execution_core.results import ExecutionResult
 from adam_os.execution_core.executor import Executor, LocalExecutor
+
+# Phase 4 instrumentation (detection-only)
+from adam_os.trust.snapshot import collect_snapshot
+from adam_os.trust.evaluator import evaluate_trust
 
 
 def dispatch(
@@ -41,23 +45,89 @@ def dispatch(
     ledger.start({"tool_name": tool_name, "tool_input": payload})
     events_written += 1
 
+    # Phase 4: pre-run snapshot
+    repo_root = "."
+    pre = collect_snapshot(repo_root=repo_root)
+    ledger.event("trust.pre_snapshot", pre)
+    events_written += 1
+
     try:
         out = ex.execute_tool(tool_name.strip(), payload)
+
+        # Phase 4: post-run snapshot + trust evaluation
+        post = collect_snapshot(repo_root=repo_root)
+        ledger.event("trust.post_snapshot", post)
+        events_written += 1
+
+        status, violations = evaluate_trust(pre, post)
+        ledger.event(
+            "trust.classification",
+            {"status": status, "violations": violations},
+        )
+        events_written += 1
+
         ledger.event("tool.result", {"tool_name": tool_name, "ok": True})
         events_written += 1
         ledger.end({"ok": True})
         events_written += 1
-        return ExecutionResult(run_id=ledger.run_id, ok=True, output=out, events_written=events_written)
+
+        return ExecutionResult(
+            run_id=ledger.run_id,
+            ok=True,
+            output=out,
+            events_written=events_written,
+        )
+
     except ToolNotFoundError as e:
-        ledger.event("tool.result", {"tool_name": tool_name, "ok": False, "error": str(e)})
+        post = collect_snapshot(repo_root=repo_root)
+        ledger.event("trust.post_snapshot", post)
+        events_written += 1
+
+        status, violations = evaluate_trust(pre, post)
+        ledger.event(
+            "trust.classification",
+            {"status": status, "violations": violations},
+        )
+        events_written += 1
+
+        ledger.event(
+            "tool.result",
+            {"tool_name": tool_name, "ok": False, "error": str(e)},
+        )
         events_written += 1
         ledger.end({"ok": False})
         events_written += 1
-        return ExecutionResult(run_id=ledger.run_id, ok=False, error=str(e), events_written=events_written)
+
+        return ExecutionResult(
+            run_id=ledger.run_id,
+            ok=False,
+            error=str(e),
+            events_written=events_written,
+        )
+
     except Exception as e:
-        # Treat anything else as a tool execution failure for now.
-        ledger.event("tool.result", {"tool_name": tool_name, "ok": False, "error": str(e)})
+        post = collect_snapshot(repo_root=repo_root)
+        ledger.event("trust.post_snapshot", post)
+        events_written += 1
+
+        status, violations = evaluate_trust(pre, post)
+        ledger.event(
+            "trust.classification",
+            {"status": status, "violations": violations},
+        )
+        events_written += 1
+
+        ledger.event(
+            "tool.result",
+            {"tool_name": tool_name, "ok": False, "error": str(e)},
+        )
         events_written += 1
         ledger.end({"ok": False})
         events_written += 1
-        return ExecutionResult(run_id=ledger.run_id, ok=False, error=str(e), events_written=events_written)
+
+        return ExecutionResult(
+            run_id=ledger.run_id,
+            ok=False,
+            error=str(e),
+            events_written=events_written,
+        )
