@@ -1,3 +1,4 @@
+# Procedure: Dispatcher owns the run boundary + ledger receipts (Phase 3) + trust snapshots (Phase 4)
 """
 Execution Core Dispatcher
 
@@ -22,6 +23,43 @@ from adam_os.execution_core.executor import Executor, LocalExecutor
 # Phase 4 instrumentation (detection-only)
 from adam_os.trust.snapshot import collect_snapshot
 from adam_os.trust.evaluator import evaluate_trust
+
+
+def _maybe_emit_memory_write_receipt(
+    ledger: RunLedger,
+    tool_name: str,
+    tool_output: Any,
+) -> bool:
+    """
+    Phase 5: Emit a ledger receipt for successful memory.write ONLY.
+
+    Hard rules:
+    - ledger write is owned by dispatcher (not tool)
+    - emit only on success
+    - never store raw memory content in ledger
+    """
+    if tool_name != "memory.write":
+        return False
+
+    if not isinstance(tool_output, dict):
+        return False
+
+    memory_id = tool_output.get("memory_id")
+    record_hash = tool_output.get("record_hash")
+    store_path = tool_output.get("store_path")
+
+    if not isinstance(memory_id, str) or not memory_id.strip():
+        return False
+    if not isinstance(record_hash, str) or not record_hash.strip():
+        return False
+    if not isinstance(store_path, str) or not store_path.strip():
+        return False
+
+    ledger.event(
+        "memory.write",
+        {"memory_id": memory_id, "record_hash": record_hash, "store_path": store_path},
+    )
+    return True
 
 
 def dispatch(
@@ -53,6 +91,10 @@ def dispatch(
 
     try:
         out = ex.execute_tool(tool_name.strip(), payload)
+
+        # Phase 5: success-only receipts (no raw memory)
+        if _maybe_emit_memory_write_receipt(ledger, tool_name.strip(), out):
+            events_written += 1
 
         # Phase 4: post-run snapshot + trust evaluation
         post = collect_snapshot(repo_root=repo_root)
