@@ -11,7 +11,8 @@ Registered tools:
 - Phase 5: memory.write (append-only store write; ledger owned by dispatcher)
 - Phase 7: artifact.ingest (RAW artifact write + artifact registry append; ledger owned by dispatcher)
 - Phase 7: artifact.sanitize (SANITIZED artifact write + artifact registry append; ledger owned by dispatcher)
-- Phase 7: artifact.canon_select (CANON selection -> BUNDLE_MANIFEST; registry append-only; ledger owned by dispatcher)
+- Phase 7: artifact.canon_select (CANON selection -> selection artifact; registry append-only; ledger owned by dispatcher)
+- Phase 7: artifact.bundle_manifest (BUNDLE MANIFEST object; registry append-only; ledger owned by dispatcher)
 """
 
 from __future__ import annotations
@@ -28,6 +29,10 @@ from adam_os.tools.artifact_sanitize import artifact_sanitize, TOOL_NAME as ARTI
 from adam_os.tools.artifact_canon_select import (
     artifact_canon_select,
     TOOL_NAME as ARTIFACT_CANON_SELECT_TOOL_NAME,
+)
+from adam_os.tools.artifact_bundle_manifest import (
+    artifact_bundle_manifest,
+    TOOL_NAME as ARTIFACT_BUNDLE_MANIFEST_TOOL_NAME,
 )
 
 
@@ -55,9 +60,13 @@ def _ensure_tools_registered() -> None:
     if not tool_registry.has(ARTIFACT_SANITIZE_TOOL_NAME):
         tool_registry.register(ARTIFACT_SANITIZE_TOOL_NAME, artifact_sanitize)
 
-    # Phase 7 Step 6: CANON select -> BUNDLE_MANIFEST + artifact registry append
+    # Phase 7 Step 6: CANON select -> selection artifact + artifact registry append
     if not tool_registry.has(ARTIFACT_CANON_SELECT_TOOL_NAME):
         tool_registry.register(ARTIFACT_CANON_SELECT_TOOL_NAME, artifact_canon_select)
+
+    # Phase 7 Step 7: BUNDLE MANIFEST object + artifact registry append
+    if not tool_registry.has(ARTIFACT_BUNDLE_MANIFEST_TOOL_NAME):
+        tool_registry.register(ARTIFACT_BUNDLE_MANIFEST_TOOL_NAME, artifact_bundle_manifest)
 
 
 @dataclass
@@ -70,6 +79,7 @@ class LocalExecutor:
     - Phase 7 adds governed artifact.ingest (artifact-only; registry append-only; ledger owned by dispatcher)
     - Phase 7 adds governed artifact.sanitize (sanitize-only; registry append-only; ledger owned by dispatcher)
     - Phase 7 adds governed artifact.canon_select (canon-only; registry append-only; ledger owned by dispatcher)
+    - Phase 7 adds governed artifact.bundle_manifest (bundle-only; registry append-only; ledger owned by dispatcher)
     """
 
     def __post_init__(self) -> None:
