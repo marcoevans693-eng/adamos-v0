@@ -1,21 +1,4 @@
-# Procedure: Wire Phase 0/5/7 executor to explicit tool registry (add Phase 7 tools registration)
-"""
-Execution Core Executor
-
-Now wired to an explicit tool registry:
-- tool names map to callables (no magic discovery)
-- default is still safe-by-default: only registered tools can run
-
-Registered tools:
-- Phase 0: repo.list_files, repo.read_text (read-only)
-- Phase 5: memory.write (append-only store write; ledger owned by dispatcher)
-- Phase 7: artifact.build_spec (BUILD SPEC object; registry append-only; ledger owned by dispatcher)
-- Phase 7: artifact.ingest (RAW artifact write + artifact registry append; ledger owned by dispatcher)
-- Phase 7: artifact.sanitize (SANITIZED artifact write + artifact registry append; ledger owned by dispatcher)
-- Phase 7: artifact.canon_select (CANON selection -> selection artifact; registry append-only; ledger owned by dispatcher)
-- Phase 7: artifact.bundle_manifest (BUNDLE MANIFEST object; registry append-only; ledger owned by dispatcher)
-"""
-
+# Procedure: Wire Phase 0/5/7 executor to explicit tool registry (add Step 9 work_order_emit)
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -23,23 +6,15 @@ from typing import Any, Dict, Protocol
 
 from adam_os.execution_core.errors import ToolNotFoundError, ToolExecutionError
 from adam_os.tools import registry as tool_registry
+
 from adam_os.tools.read_only_repo import repo_list_files, repo_read_text
 from adam_os.tools.memory_write import memory_write, TOOL_NAME as MEMORY_WRITE_TOOL_NAME
 from adam_os.tools.artifact_ingest import artifact_ingest, TOOL_NAME as ARTIFACT_INGEST_TOOL_NAME
 from adam_os.tools.artifact_sanitize import artifact_sanitize, TOOL_NAME as ARTIFACT_SANITIZE_TOOL_NAME
-from adam_os.tools.artifact_canon_select import (
-    artifact_canon_select,
-    TOOL_NAME as ARTIFACT_CANON_SELECT_TOOL_NAME,
-)
-from adam_os.tools.artifact_bundle_manifest import (
-    artifact_bundle_manifest,
-    TOOL_NAME as ARTIFACT_BUNDLE_MANIFEST_TOOL_NAME,
-)
-
-from adam_os.tools.artifact_build_spec import (
-    artifact_build_spec,
-    TOOL_NAME as ARTIFACT_BUILD_SPEC_TOOL_NAME,
-)
+from adam_os.tools.artifact_canon_select import artifact_canon_select, TOOL_NAME as ARTIFACT_CANON_SELECT_TOOL_NAME
+from adam_os.tools.artifact_bundle_manifest import artifact_bundle_manifest, TOOL_NAME as ARTIFACT_BUNDLE_MANIFEST_TOOL_NAME
+from adam_os.tools.artifact_build_spec import artifact_build_spec, TOOL_NAME as ARTIFACT_BUILD_SPEC_TOOL_NAME
+from adam_os.tools.artifact_work_order_emit import artifact_work_order_emit, TOOL_NAME as ARTIFACT_WORK_ORDER_TOOL_NAME
 
 
 class Executor(Protocol):
@@ -48,51 +23,28 @@ class Executor(Protocol):
 
 
 def _ensure_tools_registered() -> None:
-    # Idempotent-ish: only register if missing (avoid double-register ValueError)
     if not tool_registry.has("repo.list_files"):
         tool_registry.register("repo.list_files", repo_list_files)
     if not tool_registry.has("repo.read_text"):
         tool_registry.register("repo.read_text", repo_read_text)
-
-    # Phase 5: append-only memory write
     if not tool_registry.has(MEMORY_WRITE_TOOL_NAME):
         tool_registry.register(MEMORY_WRITE_TOOL_NAME, memory_write)
-
-    # Phase 7: RAW artifact ingest + artifact registry append
     if not tool_registry.has(ARTIFACT_INGEST_TOOL_NAME):
         tool_registry.register(ARTIFACT_INGEST_TOOL_NAME, artifact_ingest)
-
-    # Phase 7 Step 5: SANITIZED artifact write + artifact registry append
     if not tool_registry.has(ARTIFACT_SANITIZE_TOOL_NAME):
         tool_registry.register(ARTIFACT_SANITIZE_TOOL_NAME, artifact_sanitize)
-
-    # Phase 7 Step 6: CANON select -> selection artifact + artifact registry append
     if not tool_registry.has(ARTIFACT_CANON_SELECT_TOOL_NAME):
         tool_registry.register(ARTIFACT_CANON_SELECT_TOOL_NAME, artifact_canon_select)
-
-    # Phase 7 Step 7: BUNDLE MANIFEST object + artifact registry append
     if not tool_registry.has(ARTIFACT_BUNDLE_MANIFEST_TOOL_NAME):
         tool_registry.register(ARTIFACT_BUNDLE_MANIFEST_TOOL_NAME, artifact_bundle_manifest)
-
-        # Phase 7 Step 8: BUILD SPEC object + artifact registry append
     if not tool_registry.has(ARTIFACT_BUILD_SPEC_TOOL_NAME):
         tool_registry.register(ARTIFACT_BUILD_SPEC_TOOL_NAME, artifact_build_spec)
-
+    if not tool_registry.has(ARTIFACT_WORK_ORDER_TOOL_NAME):
+        tool_registry.register(ARTIFACT_WORK_ORDER_TOOL_NAME, artifact_work_order_emit)
 
 
 @dataclass
 class LocalExecutor:
-    """
-    Local tool executor (Phase 0+)
-    - executes only explicitly registered tools
-    - Phase 0 tools are read-only
-    - Phase 5 adds governed append-only memory.write (store-only; ledger owned by dispatcher)
-    - Phase 7 adds governed artifact.ingest (artifact-only; registry append-only; ledger owned by dispatcher)
-    - Phase 7 adds governed artifact.sanitize (sanitize-only; registry append-only; ledger owned by dispatcher)
-    - Phase 7 adds governed artifact.canon_select (canon-only; registry append-only; ledger owned by dispatcher)
-    - Phase 7 adds governed artifact.bundle_manifest (bundle-only; registry append-only; ledger owned by dispatcher)
-    """
-
     def __post_init__(self) -> None:
         _ensure_tools_registered()
 
