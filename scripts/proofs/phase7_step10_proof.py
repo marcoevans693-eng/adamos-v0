@@ -48,8 +48,7 @@ def main() -> None:
     registry_path = Path(".adam_os") / "artifacts" / "artifact_registry.jsonl"
     before_lines = _count_lines(registry_path)
 
-    # IMPORTANT: Use an environment-provided passphrase so we don't leak secrets into history.
-    # For proof, accept a default passphrase if not provided (dev-only).
+    # Dev-only passphrase (no secrets); keep deterministic idempotency focus.
     passphrase = "dev-passphrase-step10"
 
     r1 = e.execute_tool(
@@ -95,7 +94,6 @@ def main() -> None:
 
     if not _registry_has(registry_path, snapshot_id, "SNAPSHOT_ARCHIVE"):
         raise RuntimeError("registry missing SNAPSHOT_ARCHIVE record for snapshot_id")
-
     if not _registry_has(registry_path, f"{snapshot_id}--manifest", "SNAPSHOT_MANIFEST"):
         raise RuntimeError("registry missing SNAPSHOT_MANIFEST record")
 
@@ -115,7 +113,6 @@ def main() -> None:
     if end_lines != mid_lines:
         raise RuntimeError("idempotency violated: registry line count changed on second run")
 
-    # Plain hash should remain stable across idempotent re-run (manifest value)
     if r2.get("archive_plain_sha256") != r1.get("archive_plain_sha256"):
         raise RuntimeError("archive_plain_sha256 changed across idempotent call")
 

@@ -15,7 +15,10 @@ from adam_os.tools.artifact_canon_select import artifact_canon_select, TOOL_NAME
 from adam_os.tools.artifact_bundle_manifest import artifact_bundle_manifest, TOOL_NAME as ARTIFACT_BUNDLE_MANIFEST_TOOL_NAME
 from adam_os.tools.artifact_build_spec import artifact_build_spec, TOOL_NAME as ARTIFACT_BUILD_SPEC_TOOL_NAME
 from adam_os.tools.artifact_work_order_emit import artifact_work_order_emit, TOOL_NAME as ARTIFACT_WORK_ORDER_TOOL_NAME
-from adam_os.tools.artifact_snapshot_export import artifact_snapshot_export, TOOL_NAME as ARTIFACT_SNAPSHOT_EXPORT_TOOL_NAME
+from adam_os.tools.artifact_snapshot_export import (
+    artifact_snapshot_export,
+    TOOL_NAME as ARTIFACT_SNAPSHOT_EXPORT_TOOL_NAME,
+)
 
 
 class Executor(Protocol):
