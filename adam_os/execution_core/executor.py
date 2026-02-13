@@ -9,6 +9,7 @@ Now wired to an explicit tool registry:
 Registered tools:
 - Phase 0: repo.list_files, repo.read_text (read-only)
 - Phase 5: memory.write (append-only store write; ledger owned by dispatcher)
+- Phase 7: artifact.build_spec (BUILD SPEC object; registry append-only; ledger owned by dispatcher)
 - Phase 7: artifact.ingest (RAW artifact write + artifact registry append; ledger owned by dispatcher)
 - Phase 7: artifact.sanitize (SANITIZED artifact write + artifact registry append; ledger owned by dispatcher)
 - Phase 7: artifact.canon_select (CANON selection -> selection artifact; registry append-only; ledger owned by dispatcher)
@@ -33,6 +34,11 @@ from adam_os.tools.artifact_canon_select import (
 from adam_os.tools.artifact_bundle_manifest import (
     artifact_bundle_manifest,
     TOOL_NAME as ARTIFACT_BUNDLE_MANIFEST_TOOL_NAME,
+)
+
+from adam_os.tools.artifact_build_spec import (
+    artifact_build_spec,
+    TOOL_NAME as ARTIFACT_BUILD_SPEC_TOOL_NAME,
 )
 
 
@@ -67,6 +73,11 @@ def _ensure_tools_registered() -> None:
     # Phase 7 Step 7: BUNDLE MANIFEST object + artifact registry append
     if not tool_registry.has(ARTIFACT_BUNDLE_MANIFEST_TOOL_NAME):
         tool_registry.register(ARTIFACT_BUNDLE_MANIFEST_TOOL_NAME, artifact_bundle_manifest)
+
+        # Phase 7 Step 8: BUILD SPEC object + artifact registry append
+    if not tool_registry.has(ARTIFACT_BUILD_SPEC_TOOL_NAME):
+        tool_registry.register(ARTIFACT_BUILD_SPEC_TOOL_NAME, artifact_build_spec)
+
 
 
 @dataclass
