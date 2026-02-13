@@ -1,4 +1,4 @@
-# Procedure: Wire Phase 0/5/7 executor to explicit tool registry (add Step 9 work_order_emit)
+# Procedure: Wire Phase 0/5/7 executor to explicit tool registry (add Step 10 snapshot_export)
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -15,6 +15,7 @@ from adam_os.tools.artifact_canon_select import artifact_canon_select, TOOL_NAME
 from adam_os.tools.artifact_bundle_manifest import artifact_bundle_manifest, TOOL_NAME as ARTIFACT_BUNDLE_MANIFEST_TOOL_NAME
 from adam_os.tools.artifact_build_spec import artifact_build_spec, TOOL_NAME as ARTIFACT_BUILD_SPEC_TOOL_NAME
 from adam_os.tools.artifact_work_order_emit import artifact_work_order_emit, TOOL_NAME as ARTIFACT_WORK_ORDER_TOOL_NAME
+from adam_os.tools.artifact_snapshot_export import artifact_snapshot_export, TOOL_NAME as ARTIFACT_SNAPSHOT_EXPORT_TOOL_NAME
 
 
 class Executor(Protocol):
@@ -41,6 +42,8 @@ def _ensure_tools_registered() -> None:
         tool_registry.register(ARTIFACT_BUILD_SPEC_TOOL_NAME, artifact_build_spec)
     if not tool_registry.has(ARTIFACT_WORK_ORDER_TOOL_NAME):
         tool_registry.register(ARTIFACT_WORK_ORDER_TOOL_NAME, artifact_work_order_emit)
+    if not tool_registry.has(ARTIFACT_SNAPSHOT_EXPORT_TOOL_NAME):
+        tool_registry.register(ARTIFACT_SNAPSHOT_EXPORT_TOOL_NAME, artifact_snapshot_export)
 
 
 @dataclass
