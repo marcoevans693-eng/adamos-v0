@@ -1,4 +1,3 @@
-# Procedure: Wire Phase 0/5/7/8 executor to explicit tool registry (add inference response/error emitters)
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -32,6 +31,10 @@ from adam_os.tools.inference_error_emit import (
     inference_error_emit,
     TOOL_NAME as INFERENCE_ERROR_EMIT_TOOL_NAME,
 )
+from adam_os.tools.inference_provider_select import (
+    inference_provider_select,
+    TOOL_NAME as INFERENCE_PROVIDER_SELECT_TOOL_NAME,
+)
 
 
 class Executor(Protocol):
@@ -60,12 +63,15 @@ def _ensure_tools_registered() -> None:
         tool_registry.register(ARTIFACT_WORK_ORDER_TOOL_NAME, artifact_work_order_emit)
     if not tool_registry.has(ARTIFACT_SNAPSHOT_EXPORT_TOOL_NAME):
         tool_registry.register(ARTIFACT_SNAPSHOT_EXPORT_TOOL_NAME, artifact_snapshot_export)
+
     if not tool_registry.has(INFERENCE_REQUEST_EMIT_TOOL_NAME):
         tool_registry.register(INFERENCE_REQUEST_EMIT_TOOL_NAME, inference_request_emit)
     if not tool_registry.has(INFERENCE_RESPONSE_EMIT_TOOL_NAME):
         tool_registry.register(INFERENCE_RESPONSE_EMIT_TOOL_NAME, inference_response_emit)
     if not tool_registry.has(INFERENCE_ERROR_EMIT_TOOL_NAME):
         tool_registry.register(INFERENCE_ERROR_EMIT_TOOL_NAME, inference_error_emit)
+    if not tool_registry.has(INFERENCE_PROVIDER_SELECT_TOOL_NAME):
+        tool_registry.register(INFERENCE_PROVIDER_SELECT_TOOL_NAME, inference_provider_select)
 
 
 @dataclass
