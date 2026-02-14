@@ -35,6 +35,10 @@ from adam_os.tools.inference_provider_select import (
     inference_provider_select,
     TOOL_NAME as INFERENCE_PROVIDER_SELECT_TOOL_NAME,
 )
+from adam_os.tools.inference_receipt_emit import (
+    inference_receipt_emit,
+    TOOL_NAME as INFERENCE_RECEIPT_EMIT_TOOL_NAME,
+)
 
 
 class Executor(Protocol):
@@ -72,6 +76,8 @@ def _ensure_tools_registered() -> None:
         tool_registry.register(INFERENCE_ERROR_EMIT_TOOL_NAME, inference_error_emit)
     if not tool_registry.has(INFERENCE_PROVIDER_SELECT_TOOL_NAME):
         tool_registry.register(INFERENCE_PROVIDER_SELECT_TOOL_NAME, inference_provider_select)
+    if not tool_registry.has(INFERENCE_RECEIPT_EMIT_TOOL_NAME):
+        tool_registry.register(INFERENCE_RECEIPT_EMIT_TOOL_NAME, inference_receipt_emit)
 
 
 @dataclass
