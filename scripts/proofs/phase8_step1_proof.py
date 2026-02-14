@@ -22,11 +22,12 @@ def main() -> None:
         "created_at_utc": created_at_utc,
         "snapshot_hash": snapshot_hash,
         "provider": "openai",
-        "model": "gpt-4.1-mini-2025-xx-xx",  # placeholder string; no provider call occurs in Step 1
+        "model": "gpt-4.1-mini",
         "system_prompt": "",
         "user_prompt": "hello",
         "temperature": 0.0,
         "max_tokens": 16,
+        "provider_max_tokens_cap": 1024,
     }
 
     r1 = e.execute_tool("inference.request_emit", tool_input)
@@ -39,6 +40,7 @@ def main() -> None:
     assert obj["created_at_utc"] == created_at_utc
     assert obj["snapshot_hash"] == snapshot_hash
     assert obj["provider"] == "openai"
+    assert obj["model"] == "gpt-4.1-mini"
     assert obj["params"]["max_tokens"] == 16
 
     reg_path = Path(r1["registry_path"])

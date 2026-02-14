@@ -4,7 +4,8 @@ adam_os.inference.contracts
 Phase 8 contract helpers.
 
 This module defines strict builders/validators for inference artifacts.
-Step 1 implements inference.request only (no provider execution).
+Step 1 implemented inference.request only (no provider execution).
+Step 2 adds Policy Gate enforcement (SPEC-008D).
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from adam_os.memory.canonical import canonical_dumps, sha256_hex
+from adam_os.inference.policy_gate import enforce_policy_gate
 
 
 def _is_hex64(s: str) -> bool:
@@ -37,8 +39,8 @@ def build_inference_request(tool_input: Dict[str, Any]) -> Dict[str, Any]:
         raise ValueError("tool_input.snapshot_hash must be a 64-hex string")
 
     provider = tool_input.get("provider")
-    if not isinstance(provider, str) or provider.strip() not in {"openai", "anthropic"}:
-        raise ValueError("tool_input.provider must be 'openai' or 'anthropic'")
+    if not isinstance(provider, str) or not provider.strip():
+        raise ValueError("tool_input.provider must be a non-empty string")
 
     model = tool_input.get("model")
     if not isinstance(model, str) or not model.strip():
@@ -60,19 +62,32 @@ def build_inference_request(tool_input: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(max_tokens, int) or max_tokens <= 0:
         raise ValueError("tool_input.max_tokens must be a positive int")
 
+    provider_max_tokens_cap = tool_input.get("provider_max_tokens_cap")
+    if not isinstance(provider_max_tokens_cap, int) or provider_max_tokens_cap <= 0:
+        raise ValueError("tool_input.provider_max_tokens_cap must be injected (positive int)")
+
     request_id = tool_input.get("request_id")
     if request_id is not None and (not isinstance(request_id, str) or not request_id.strip()):
         raise ValueError("tool_input.request_id must be a non-empty string if provided")
+
+    # Policy Gate (SPEC-008D)
+    policy = enforce_policy_gate(
+        provider=provider.strip(),
+        model=model.strip(),
+        temperature=float(temperature),
+        max_tokens=int(max_tokens),
+        provider_max_tokens_cap=int(provider_max_tokens_cap),
+    )
 
     req: Dict[str, Any] = {
         "kind": "inference.request",
         "created_at_utc": created_at_utc,
         "snapshot_hash": snapshot_hash,
-        "provider": provider.strip(),
-        "model": model.strip(),
+        "provider": policy["provider"],
+        "model": policy["model"],
         "params": {
-            "temperature": float(temperature),
-            "max_tokens": int(max_tokens),
+            "temperature": policy["temperature"],
+            "max_tokens": policy["max_tokens"],
         },
         "prompts": {
             "system_prompt": system_prompt,
