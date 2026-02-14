@@ -1,4 +1,4 @@
-# Procedure: Wire Phase 0/5/7 executor to explicit tool registry (add Step 10 snapshot_export)
+# Procedure: Wire Phase 0/5/7/8 executor to explicit tool registry (add inference.request_emit)
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -18,6 +18,11 @@ from adam_os.tools.artifact_work_order_emit import artifact_work_order_emit, TOO
 from adam_os.tools.artifact_snapshot_export import (
     artifact_snapshot_export,
     TOOL_NAME as ARTIFACT_SNAPSHOT_EXPORT_TOOL_NAME,
+)
+
+from adam_os.tools.inference_request_emit import (
+    inference_request_emit,
+    TOOL_NAME as INFERENCE_REQUEST_EMIT_TOOL_NAME,
 )
 
 
@@ -47,6 +52,8 @@ def _ensure_tools_registered() -> None:
         tool_registry.register(ARTIFACT_WORK_ORDER_TOOL_NAME, artifact_work_order_emit)
     if not tool_registry.has(ARTIFACT_SNAPSHOT_EXPORT_TOOL_NAME):
         tool_registry.register(ARTIFACT_SNAPSHOT_EXPORT_TOOL_NAME, artifact_snapshot_export)
+    if not tool_registry.has(INFERENCE_REQUEST_EMIT_TOOL_NAME):
+        tool_registry.register(INFERENCE_REQUEST_EMIT_TOOL_NAME, inference_request_emit)
 
 
 @dataclass
