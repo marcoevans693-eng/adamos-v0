@@ -40,6 +40,11 @@ from adam_os.tools.inference_receipt_emit import (
     TOOL_NAME as INFERENCE_RECEIPT_EMIT_TOOL_NAME,
 )
 
+from adam_os.tools.inference_replay import (
+    inference_replay,
+    TOOL_NAME as INFERENCE_REPLAY_TOOL_NAME,
+)
+
 
 class Executor(Protocol):
     def execute_tool(self, tool_name: str, tool_input: Dict[str, Any]) -> Any:
@@ -78,6 +83,9 @@ def _ensure_tools_registered() -> None:
         tool_registry.register(INFERENCE_PROVIDER_SELECT_TOOL_NAME, inference_provider_select)
     if not tool_registry.has(INFERENCE_RECEIPT_EMIT_TOOL_NAME):
         tool_registry.register(INFERENCE_RECEIPT_EMIT_TOOL_NAME, inference_receipt_emit)
+    if not tool_registry.has(INFERENCE_REPLAY_TOOL_NAME):
+        tool_registry.register(INFERENCE_REPLAY_TOOL_NAME, inference_replay)
+
 
 
 @dataclass
