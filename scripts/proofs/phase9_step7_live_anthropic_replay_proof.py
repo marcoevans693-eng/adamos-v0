@@ -21,7 +21,7 @@ def main() -> None:
         "created_at_utc": created_at_utc,
         "snapshot_hash": snapshot_hash,
         "provider": "anthropic",
-        "model": "claude-3-5-sonnet-latest",
+        "model": "claude-3-haiku",
         "system_prompt": "You are a deterministic test harness.",
         "user_prompt": "Say OK",
         "temperature": 0.0,
