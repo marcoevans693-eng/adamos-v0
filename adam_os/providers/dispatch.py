@@ -59,6 +59,7 @@ def dispatch_text(
 
     - Fail-closed on unknown provider.
     - No policy changes here; policy gate remains upstream (request_emit).
+    - Enforces minimal invariants on returned ProviderTextResult.
     """
     if not isinstance(provider, str) or not provider.strip():
         raise ValueError("dispatch_text_invalid_provider")
@@ -68,10 +69,24 @@ def dispatch_text(
     if fn is None:
         raise ValueError(f"dispatch_text_unsupported_provider: {p}")
 
-    return fn(
+    r = fn(
         model=model,
         user_input=user_input,
         instructions=instructions,
         temperature=temperature,
         max_output_tokens=max_output_tokens,
     )
+
+    # Fail-closed invariants: ensure the dispatch boundary always returns a sane shape.
+    if not isinstance(r, ProviderTextResult):
+        raise TypeError("dispatch_text_invalid_result_type")
+    if not isinstance(r.provider, str) or not r.provider.strip():
+        raise ValueError("dispatch_text_invalid_result_provider")
+    if not isinstance(r.model, str) or not r.model.strip():
+        raise ValueError("dispatch_text_invalid_result_model")
+    if not isinstance(r.provider_response_id, str) or not r.provider_response_id.strip():
+        raise ValueError("dispatch_text_invalid_result_provider_response_id")
+    if not isinstance(r.output_text, str):
+        raise ValueError("dispatch_text_invalid_result_output_text")
+
+    return r
