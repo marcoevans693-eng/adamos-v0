@@ -98,7 +98,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument(
         "--template-request-id",
-        default="a705a338f98da037c7bb9b4849b7aaa57211e5e107517119bddb429d4269f9eb",
+        default="5f3c5ae397fdcaadf5f8779eff4c6069aa32c6cba7a16301bbc1897ec0bc8471",
         help="Template request id under .adam_os/inference/requests/ (known-good).",
     )
     ap.add_argument(
