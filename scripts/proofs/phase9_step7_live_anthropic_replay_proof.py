@@ -17,8 +17,6 @@ def main() -> None:
     created_at_utc = "2026-02-16T00:00:00Z"
     snapshot_hash = "c" * 64
 
-    # IMPORTANT: Phase 8 request_emit contract uses top-level system_prompt/user_prompt
-    # (not a nested "prompts" dict).
     req_in = {
         "created_at_utc": created_at_utc,
         "snapshot_hash": snapshot_hash,
@@ -28,11 +26,13 @@ def main() -> None:
         "user_prompt": "Say OK",
         "temperature": 0.0,
         "max_tokens": 16,
+        # Phase 8 Policy Gate injection: required ceiling
+        "provider_max_tokens_cap": 256,
     }
 
     # 1) Emit request (Phase 8 gate)
     req_out = e.execute_tool("inference.request_emit", req_in)
-    request_id = req_out["request_id"]
+    request_id = req_out["artifact_id"]
     receipt_id_expected = f"{request_id}--receipt"
 
     # 2) Execute (Phase 9 provider boundary via dispatch)
