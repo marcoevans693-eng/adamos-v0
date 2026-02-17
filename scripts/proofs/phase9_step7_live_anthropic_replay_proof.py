@@ -17,15 +17,17 @@ def main() -> None:
     created_at_utc = "2026-02-16T00:00:00Z"
     snapshot_hash = "c" * 64
 
-    # Intentionally choose a plausible model string; proof allows error path.
-    # Success is not required; integrity + receipts are required.
+    # IMPORTANT: Phase 8 request_emit contract uses top-level system_prompt/user_prompt
+    # (not a nested "prompts" dict).
     req_in = {
         "created_at_utc": created_at_utc,
         "snapshot_hash": snapshot_hash,
         "provider": "anthropic",
         "model": "claude-3-5-sonnet-latest",
-        "prompts": {"system_prompt": "You are a deterministic test harness.", "user_prompt": "Say OK"},
-        "params": {"temperature": 0.0, "max_tokens": 16},
+        "system_prompt": "You are a deterministic test harness.",
+        "user_prompt": "Say OK",
+        "temperature": 0.0,
+        "max_tokens": 16,
     }
 
     # 1) Emit request (Phase 8 gate)
@@ -52,12 +54,9 @@ def main() -> None:
     if receipt_id is None or receipt_id != receipt_id_expected:
         raise SystemExit(f"FAIL: receipt_id missing/mismatch: got={receipt_id} expected={receipt_id_expected}")
 
-    # Must be provider anthropic (even on error path)
-    provider = req_in["provider"]
-    model = req_in["model"]
-
     # 3) Replay must be ok and must not write registry
     replay_in = {"created_at_utc": created_at_utc, "receipt_id": receipt_id}
+
     replay_before_bytes = registry_path.stat().st_size if registry_path.exists() else 0
     replay_before_lines = len(registry_path.read_text(encoding="utf-8").splitlines()) if registry_path.exists() else 0
 
@@ -78,8 +77,8 @@ def main() -> None:
     out = {
         "ok": True,
         "created_at_utc": created_at_utc,
-        "provider": provider,
-        "model": model,
+        "provider": req_in["provider"],
+        "model": req_in["model"],
         "request_id": request_id,
         "receipt_id": receipt_id,
         "execute_result": execute_result,
