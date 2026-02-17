@@ -5,7 +5,8 @@ import json
 from pathlib import Path
 from typing import Any, Dict
 
-from adam_os.providers.openai_responses import OpenAIHTTPError, responses_create_text
+from adam_os.providers.openai_responses import OpenAIHTTPError
+from adam_os.providers.dispatch import dispatch_text
 from adam_os.tools.inference_response_emit import inference_response_emit
 from adam_os.tools.inference_error_emit import inference_error_emit
 from adam_os.tools.inference_receipt_emit import inference_receipt_emit
@@ -42,7 +43,7 @@ def inference_execute(tool_input: Dict[str, Any]) -> Dict[str, Any]:
 
     Behavior:
       - Load Phase 8 request artifact JSON
-      - Call provider (Phase 9 network boundary)
+      - Call provider (Phase 9 network boundary via dispatch)
       - Emit Phase 8 response/error artifacts (unchanged contracts)
       - ALWAYS emit Phase 8 receipt artifact (unchanged contract)
     """
@@ -99,43 +100,37 @@ def inference_execute(tool_input: Dict[str, Any]) -> Dict[str, Any]:
     response_id = f"{request_id_s}--response"
     error_id = f"{request_id_s}--error"
 
-    # Phase 9 provider execution (OpenAI first; Anthropic later)
     try:
-        if provider_s != "openai":
-            raise ValueError("inference_execute_provider_unsupported: only 'openai' is implemented in phase9_step1")
-
-        r = responses_create_text(
+        # Provider execution via dispatch (OpenAI now; more later)
+        r = dispatch_text(
+            provider=provider_s,
             model=model_s,
             user_input=user_prompt,
             instructions=system_prompt,
             temperature=float(temperature),
             max_output_tokens=int(max_tokens),
-            timeout_s=60,
-            store=False,
         )
 
-        # Emit Phase 8 response artifact (contract preserved)
         out_resp = inference_response_emit(
             {
                 "created_at_utc": created_at_utc_s,
                 "request_id": request_id_s,
                 "request_hash": request_hash,
                 "snapshot_hash": snapshot_hash,
-                "provider": provider_s,
+                "provider": r.provider,
                 "model": r.model,
                 "output_text": r.output_text,
                 "response_id": response_id,
             }
         )
 
-        # ALWAYS emit receipt (bind request + response)
         out_receipt = inference_receipt_emit(
             {
                 "created_at_utc": created_at_utc_s,
                 "request_id": request_id_s,
                 "request_hash": request_hash,
                 "snapshot_hash": snapshot_hash,
-                "provider": provider_s,
+                "provider": r.provider,
                 "model": r.model,
                 "response_id": response_id,
             }
@@ -143,7 +138,7 @@ def inference_execute(tool_input: Dict[str, Any]) -> Dict[str, Any]:
 
         return {
             "ok": True,
-            "provider_response_id": r.response_id,
+            "provider_response_id": r.provider_response_id,
             "emitted_response": out_resp,
             "emitted_receipt": out_receipt,
         }
@@ -163,7 +158,6 @@ def inference_execute(tool_input: Dict[str, Any]) -> Dict[str, Any]:
             }
         )
 
-        # ALWAYS emit receipt (bind request + error)
         out_receipt = inference_receipt_emit(
             {
                 "created_at_utc": created_at_utc_s,
@@ -193,7 +187,6 @@ def inference_execute(tool_input: Dict[str, Any]) -> Dict[str, Any]:
             }
         )
 
-        # ALWAYS emit receipt (bind request + error)
         out_receipt = inference_receipt_emit(
             {
                 "created_at_utc": created_at_utc_s,
@@ -206,4 +199,4 @@ def inference_execute(tool_input: Dict[str, Any]) -> Dict[str, Any]:
             }
         )
 
-        return {"ok": False, "emitted_error": out_err, "emitted_receipt": out_receipt}  
+        return {"ok": False, "emitted_error": out_err, "emitted_receipt": out_receipt}
