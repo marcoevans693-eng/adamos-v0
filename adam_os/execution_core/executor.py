@@ -1,3 +1,4 @@
+# Procedure: LocalExecutor tool wiring (Phase 9 add-only registration)
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -45,6 +46,12 @@ from adam_os.tools.inference_replay import (
     TOOL_NAME as INFERENCE_REPLAY_TOOL_NAME,
 )
 
+# Phase 9 tool (real provider execution)
+from adam_os.tools.inference_execute import (
+    inference_execute,
+    TOOL_NAME as INFERENCE_EXECUTE_TOOL_NAME,
+)
+
 
 class Executor(Protocol):
     def execute_tool(self, tool_name: str, tool_input: Dict[str, Any]) -> Any:
@@ -86,6 +93,9 @@ def _ensure_tools_registered() -> None:
     if not tool_registry.has(INFERENCE_REPLAY_TOOL_NAME):
         tool_registry.register(INFERENCE_REPLAY_TOOL_NAME, inference_replay)
 
+    # Phase 9: real execution tool (network boundary)
+    if not tool_registry.has(INFERENCE_EXECUTE_TOOL_NAME):
+        tool_registry.register(INFERENCE_EXECUTE_TOOL_NAME, inference_execute)
 
 
 @dataclass
