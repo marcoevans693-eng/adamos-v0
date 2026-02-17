@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Dict
 
+from adam_os.providers.anthropic_messages import messages_create_text as anthropic_messages_create_text
 from adam_os.providers.openai_responses import responses_create_text
 
 
@@ -40,8 +41,33 @@ def _call_openai_text(
     )
 
 
+def _call_anthropic_text(
+    *,
+    model: str,
+    user_input: str,
+    instructions: str,
+    temperature: float,
+    max_output_tokens: int,
+) -> ProviderTextResult:
+    r = anthropic_messages_create_text(
+        model=model,
+        user_input=user_input,
+        system=instructions,
+        max_tokens=int(max_output_tokens),
+        temperature=float(temperature),
+        timeout_s=60,
+    )
+    return ProviderTextResult(
+        provider="anthropic",
+        model=r.model,
+        provider_response_id=r.message_id,
+        output_text=r.output_text,
+    )
+
+
 _TEXT_DISPATCH: Dict[str, Callable[..., ProviderTextResult]] = {
     "openai": _call_openai_text,
+    "anthropic": _call_anthropic_text,
 }
 
 
