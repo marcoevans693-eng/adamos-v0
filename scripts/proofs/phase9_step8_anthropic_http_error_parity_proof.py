@@ -6,18 +6,19 @@ import os
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO_ROOT))
-
-from adam_os.execution_core.executor import LocalExecutor  # noqa: E402
-
 
 def main() -> None:
     # Force an Anthropic HTTP failure deterministically by using a bogus key.
+    # IMPORTANT: set env BEFORE importing LocalExecutor / provider modules (avoids cached "missing key").
     os.environ["ANTHROPIC_API_KEY"] = "invalid-key-for-parity-proof"
 
+    REPO_ROOT = Path(__file__).resolve().parents[2]
+    sys.path.insert(0, str(REPO_ROOT))
+
+    from adam_os.execution_core.executor import LocalExecutor  # noqa: E402
+
     e = LocalExecutor()
-    created_at_utc = "2026-02-16T00:00:00Z"
+    created_at_utc = "2026-02-16T00:00:01Z"
     snapshot_hash = "c" * 64
 
     # Must be allowlisted model so we reach execution.
