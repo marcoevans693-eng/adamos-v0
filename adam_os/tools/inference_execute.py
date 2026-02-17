@@ -8,6 +8,7 @@ from typing import Any, Dict
 from adam_os.providers.openai_responses import OpenAIHTTPError, responses_create_text
 from adam_os.tools.inference_response_emit import inference_response_emit
 from adam_os.tools.inference_error_emit import inference_error_emit
+from adam_os.tools.inference_receipt_emit import inference_receipt_emit
 
 
 TOOL_NAME = "inference.execute"
@@ -43,6 +44,7 @@ def inference_execute(tool_input: Dict[str, Any]) -> Dict[str, Any]:
       - Load Phase 8 request artifact JSON
       - Call provider (Phase 9 network boundary)
       - Emit Phase 8 response/error artifacts (unchanged contracts)
+      - ALWAYS emit Phase 8 receipt artifact (unchanged contract)
     """
     if not isinstance(tool_input, dict):
         raise TypeError("tool_input must be dict")
@@ -55,7 +57,10 @@ def inference_execute(tool_input: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(request_id, str) or not request_id.strip():
         raise ValueError("tool_input.request_id must be a non-empty string")
 
-    req = _load_request(request_id.strip())
+    request_id_s = request_id.strip()
+    created_at_utc_s = created_at_utc.strip()
+
+    req = _load_request(request_id_s)
 
     provider = req.get("provider")
     model = req.get("model")
@@ -73,6 +78,9 @@ def inference_execute(tool_input: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(request_hash, str) or len(request_hash) != 64:
         raise ValueError("inference_execute_request_missing_request_hash")
 
+    provider_s = provider.strip()
+    model_s = model.strip()
+
     temperature = params.get("temperature")
     max_tokens = params.get("max_tokens")
 
@@ -88,13 +96,16 @@ def inference_execute(tool_input: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(user_prompt, str) or not user_prompt.strip():
         raise ValueError("inference_execute_request_user_prompt_invalid")
 
+    response_id = f"{request_id_s}--response"
+    error_id = f"{request_id_s}--error"
+
     # Phase 9 provider execution (OpenAI first; Anthropic later)
     try:
-        if provider.strip() != "openai":
+        if provider_s != "openai":
             raise ValueError("inference_execute_provider_unsupported: only 'openai' is implemented in phase9_step1")
 
         r = responses_create_text(
-            model=model.strip(),
+            model=model_s,
             user_input=user_prompt,
             instructions=system_prompt,
             temperature=float(temperature),
@@ -104,53 +115,95 @@ def inference_execute(tool_input: Dict[str, Any]) -> Dict[str, Any]:
         )
 
         # Emit Phase 8 response artifact (contract preserved)
-        out = inference_response_emit(
+        out_resp = inference_response_emit(
             {
-                "created_at_utc": created_at_utc.strip(),
-                "request_id": request_id.strip(),
+                "created_at_utc": created_at_utc_s,
+                "request_id": request_id_s,
                 "request_hash": request_hash,
                 "snapshot_hash": snapshot_hash,
-                "provider": provider.strip(),
+                "provider": provider_s,
                 "model": r.model,
                 "output_text": r.output_text,
-                "response_id": f"{request_id.strip()}--response",
+                "response_id": response_id,
+            }
+        )
+
+        # ALWAYS emit receipt (bind request + response)
+        out_receipt = inference_receipt_emit(
+            {
+                "created_at_utc": created_at_utc_s,
+                "request_id": request_id_s,
+                "request_hash": request_hash,
+                "snapshot_hash": snapshot_hash,
+                "provider": provider_s,
+                "model": r.model,
+                "response_id": response_id,
             }
         )
 
         return {
             "ok": True,
             "provider_response_id": r.response_id,
-            "emitted": out,
+            "emitted_response": out_resp,
+            "emitted_receipt": out_receipt,
         }
 
     except OpenAIHTTPError as e:
-        err = inference_error_emit(
+        out_err = inference_error_emit(
             {
-                "created_at_utc": created_at_utc.strip(),
-                "request_id": request_id.strip(),
+                "created_at_utc": created_at_utc_s,
+                "request_id": request_id_s,
                 "request_hash": request_hash,
                 "snapshot_hash": snapshot_hash,
-                "provider": provider.strip(),
-                "model": model.strip(),
+                "provider": provider_s,
+                "model": model_s,
                 "error_type": "provider_http_error",
                 "message": str(e),
-                "error_id": f"{request_id.strip()}--error",
+                "error_id": error_id,
             }
         )
-        return {"ok": False, "emitted": err}
 
-    except Exception as e:
-        err = inference_error_emit(
+        # ALWAYS emit receipt (bind request + error)
+        out_receipt = inference_receipt_emit(
             {
-                "created_at_utc": created_at_utc.strip(),
-                "request_id": request_id.strip(),
+                "created_at_utc": created_at_utc_s,
+                "request_id": request_id_s,
                 "request_hash": request_hash,
                 "snapshot_hash": snapshot_hash,
-                "provider": provider.strip(),
-                "model": model.strip(),
-                "error_type": "inference_execute_error",
-                "message": str(e),
-                "error_id": f"{request_id.strip()}--error",
+                "provider": provider_s,
+                "model": model_s,
+                "error_id": error_id,
             }
         )
-        return {"ok": False, "emitted": err}
+
+        return {"ok": False, "emitted_error": out_err, "emitted_receipt": out_receipt}
+
+    except Exception as e:
+        out_err = inference_error_emit(
+            {
+                "created_at_utc": created_at_utc_s,
+                "request_id": request_id_s,
+                "request_hash": request_hash,
+                "snapshot_hash": snapshot_hash,
+                "provider": provider_s,
+                "model": model_s,
+                "error_type": "inference_execute_error",
+                "message": str(e),
+                "error_id": error_id,
+            }
+        )
+
+        # ALWAYS emit receipt (bind request + error)
+        out_receipt = inference_receipt_emit(
+            {
+                "created_at_utc": created_at_utc_s,
+                "request_id": request_id_s,
+                "request_hash": request_hash,
+                "snapshot_hash": snapshot_hash,
+                "provider": provider_s,
+                "model": model_s,
+                "error_id": error_id,
+            }
+        )
+
+        return {"ok": False, "emitted_error": out_err, "emitted_receipt": out_receipt}  
