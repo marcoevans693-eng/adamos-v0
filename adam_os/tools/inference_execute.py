@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from adam_os.providers.openai_responses import OpenAIHTTPError
+from adam_os.providers.anthropic_messages import AnthropicHTTPError
 from adam_os.providers.dispatch import dispatch_text
 from adam_os.tools.inference_response_emit import inference_response_emit
 from adam_os.tools.inference_error_emit import inference_error_emit
@@ -144,6 +145,36 @@ def inference_execute(tool_input: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     except OpenAIHTTPError as e:
+        out_err = inference_error_emit(
+            {
+                "created_at_utc": created_at_utc_s,
+                "request_id": request_id_s,
+                "request_hash": request_hash,
+                "snapshot_hash": snapshot_hash,
+                "provider": provider_s,
+                "model": model_s,
+                "error_type": "provider_http_error",
+                "message": str(e),
+                "error_id": error_id,
+            }
+        )
+
+        out_receipt = inference_receipt_emit(
+            {
+                "created_at_utc": created_at_utc_s,
+                "request_id": request_id_s,
+                "request_hash": request_hash,
+                "snapshot_hash": snapshot_hash,
+                "provider": provider_s,
+                "model": model_s,
+                "error_id": error_id,
+            }
+        )
+
+        return {"ok": False, "emitted_error": out_err, "emitted_receipt": out_receipt}
+
+
+    except AnthropicHTTPError as e:
         out_err = inference_error_emit(
             {
                 "created_at_utc": created_at_utc_s,
