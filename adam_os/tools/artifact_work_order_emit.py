@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from adam_os.artifacts.registry import ArtifactRegistry, sha256_file, file_size_bytes
+from adam_os.engineering.activity_events import log_tool_execution
 from adam_os.memory.canonical import canonical_dumps, sha256_hex
 
 
@@ -61,98 +62,138 @@ def artifact_work_order_emit(tool_input: Dict[str, Any]) -> Dict[str, Any]:
         raise ValueError("tool_input.build_spec_artifact_id required")
     spec_id = build_spec_artifact_id.strip()
 
-    media_type = tool_input.get("media_type") or DEFAULT_MEDIA_TYPE
+    try:
+        media_type = tool_input.get("media_type") or DEFAULT_MEDIA_TYPE
 
-    spec_path = SPECS_DIR / f"{spec_id}.json"
-    if not spec_path.exists():
-        raise FileNotFoundError(f"BUILD_SPEC not found: {spec_path}")
+        spec_path = SPECS_DIR / f"{spec_id}.json"
+        if not spec_path.exists():
+            raise FileNotFoundError(f"BUILD_SPEC not found: {spec_path}")
 
-    spec_obj = json.loads(spec_path.read_text(encoding="utf-8"))
+        spec_obj = json.loads(spec_path.read_text(encoding="utf-8"))
 
-    bundle_hash = spec_obj["bundle"]["bundle_hash"]
-    prompt_hash = spec_obj["audit"]["prompt_hash"]
-    build_spec_sha256 = sha256_file(spec_path)
+        bundle_hash = spec_obj["bundle"]["bundle_hash"]
+        prompt_hash = spec_obj["audit"]["prompt_hash"]
+        build_spec_sha256 = sha256_file(spec_path)
 
-    work_order_id = tool_input.get("work_order_artifact_id") or f"{spec_id}--work_order"
-    if not isinstance(work_order_id, str) or not work_order_id.strip():
-        raise ValueError("work_order_artifact_id invalid")
-    work_order_id = work_order_id.strip()
+        work_order_id = tool_input.get("work_order_artifact_id") or f"{spec_id}--work_order"
+        if not isinstance(work_order_id, str) or not work_order_id.strip():
+            raise ValueError("work_order_artifact_id invalid")
+        work_order_id = work_order_id.strip()
 
-    WORK_ORDERS_DIR.mkdir(parents=True, exist_ok=True)
-    work_order_path = WORK_ORDERS_DIR / f"{work_order_id}.json"
+        WORK_ORDERS_DIR.mkdir(parents=True, exist_ok=True)
+        work_order_path = WORK_ORDERS_DIR / f"{work_order_id}.json"
 
-    reg = ArtifactRegistry(artifact_root=ARTIFACT_ROOT)
+        reg = ArtifactRegistry(artifact_root=ARTIFACT_ROOT)
 
-    # Idempotency gate
-    if work_order_path.exists() and _registry_has(reg.registry_path, work_order_id, "WORK_ORDER"):
-        sha = sha256_file(work_order_path)
-        size = file_size_bytes(work_order_path)
-        return {
+        # Idempotency gate
+        if work_order_path.exists() and _registry_has(reg.registry_path, work_order_id, "WORK_ORDER"):
+            sha = sha256_file(work_order_path)
+            size = file_size_bytes(work_order_path)
+            result = {
+                "artifact_id": work_order_id,
+                "kind": "WORK_ORDER",
+                "work_order_path": str(work_order_path),
+                "registry_path": str(reg.registry_path),
+                "sha256": sha,
+                "byte_size": size,
+                "media_type": media_type,
+            }
+            log_tool_execution(
+                created_at_utc=created_at_utc,
+                tool_name=TOOL_NAME,
+                status="idempotent",
+                artifact_id=work_order_id,
+                extra={
+                    "kind": "WORK_ORDER",
+                    "media_type": media_type,
+                },
+            )
+            return result
+
+        work_order_obj = {
             "artifact_id": work_order_id,
             "kind": "WORK_ORDER",
+            "created_at_utc": created_at_utc,
+            "lineage": {
+                "build_spec_artifact_id": spec_id,
+                "build_spec_sha256": build_spec_sha256,
+                "bundle_hash": bundle_hash,
+                "prompt_hash": prompt_hash,
+            },
+            "execution_intent": spec_obj["spec"],
+            "constraints": {
+                "no_execution": True,
+                "declarative_only": True,
+                "proxy_required": True,
+            },
+            "scope_boundaries": {
+                "filesystem_writes": "artifact_root_only",
+                "no_runtime_resolution": True,
+            },
+            "open_questions": spec_obj["spec"]["OPEN_QUESTIONS"],
+            "notes": "artifact.work_order_emit",
+            "tags": ["phase7", "work_order", "declarative"],
+        }
+
+        # Deterministic hash
+        canon = canonical_dumps(work_order_obj)
+        work_order_hash = sha256_hex(canon)
+
+        work_order_obj["work_order_hash"] = work_order_hash
+
+        final_text = canonical_dumps(work_order_obj) + "\n"
+        work_order_path.write_text(final_text, encoding="utf-8")
+
+        sha = sha256_file(work_order_path)
+        size = file_size_bytes(work_order_path)
+
+        reg.append_from_file(
+            artifact_id=work_order_id,
+            kind="WORK_ORDER",
+            created_at_utc=created_at_utc,
+            file_path=work_order_path,
+            media_type=media_type,
+            parent_artifact_ids=[spec_id],
+            notes="artifact.work_order_emit",
+            tags=["phase7", "work_order"],
+        )
+
+        result = {
+            "artifact_id": work_order_id,
+            "kind": "WORK_ORDER",
+            "build_spec_artifact_id": spec_id,
             "work_order_path": str(work_order_path),
             "registry_path": str(reg.registry_path),
             "sha256": sha,
             "byte_size": size,
             "media_type": media_type,
+            "work_order_hash": work_order_hash,
         }
+        log_tool_execution(
+            created_at_utc=created_at_utc,
+            tool_name=TOOL_NAME,
+            status="success",
+            artifact_id=work_order_id,
+            extra={
+                "kind": "WORK_ORDER",
+                "media_type": media_type,
+            },
+        )
+        return result
 
-    work_order_obj = {
-        "artifact_id": work_order_id,
-        "kind": "WORK_ORDER",
-        "created_at_utc": created_at_utc,
-        "lineage": {
-            "build_spec_artifact_id": spec_id,
-            "build_spec_sha256": build_spec_sha256,
-            "bundle_hash": bundle_hash,
-            "prompt_hash": prompt_hash,
-        },
-        "execution_intent": spec_obj["spec"],
-        "constraints": {
-            "no_execution": True,
-            "declarative_only": True,
-            "proxy_required": True,
-        },
-        "scope_boundaries": {
-            "filesystem_writes": "artifact_root_only",
-            "no_runtime_resolution": True,
-        },
-        "open_questions": spec_obj["spec"]["OPEN_QUESTIONS"],
-        "notes": "artifact.work_order_emit",
-        "tags": ["phase7", "work_order", "declarative"],
-    }
-
-    # Deterministic hash
-    canon = canonical_dumps(work_order_obj)
-    work_order_hash = sha256_hex(canon)
-
-    work_order_obj["work_order_hash"] = work_order_hash
-
-    final_text = canonical_dumps(work_order_obj) + "\n"
-    work_order_path.write_text(final_text, encoding="utf-8")
-
-    sha = sha256_file(work_order_path)
-    size = file_size_bytes(work_order_path)
-
-    reg.append_from_file(
-        artifact_id=work_order_id,
-        kind="WORK_ORDER",
-        created_at_utc=created_at_utc,
-        file_path=work_order_path,
-        media_type=media_type,
-        parent_artifact_ids=[spec_id],
-        notes="artifact.work_order_emit",
-        tags=["phase7", "work_order"],
-    )
-
-    return {
-        "artifact_id": work_order_id,
-        "kind": "WORK_ORDER",
-        "build_spec_artifact_id": spec_id,
-        "work_order_path": str(work_order_path),
-        "registry_path": str(reg.registry_path),
-        "sha256": sha,
-        "byte_size": size,
-        "media_type": media_type,
-        "work_order_hash": work_order_hash,
-    }
+    except Exception as e:
+        try:
+            work_order_id = locals().get("work_order_id")
+            log_tool_execution(
+                created_at_utc=created_at_utc,
+                tool_name=TOOL_NAME,
+                status="error",
+                artifact_id=work_order_id if isinstance(work_order_id, str) else None,
+                extra={
+                    "error_type": type(e).__name__,
+                    "error_message": str(e),
+                },
+            )
+        except Exception:
+            pass
+        raise
