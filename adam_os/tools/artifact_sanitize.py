@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 from adam_os.artifacts.registry import ArtifactRegistry, sha256_file, file_size_bytes
+from adam_os.engineering.activity_events import log_tool_execution
 from adam_os.memory.canonical import canonical_dumps
 
 
@@ -152,29 +153,71 @@ def artifact_sanitize(tool_input: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(created_at_utc, str) or not created_at_utc.strip():
         raise ValueError("tool_input.created_at_utc must be a non-empty injected string")
 
-    media_type = tool_input.get("media_type") or DEFAULT_MEDIA_TYPE
-    if not isinstance(media_type, str) or not media_type.strip():
-        raise ValueError("tool_input.media_type must be a non-empty string")
+    try:
+        media_type = tool_input.get("media_type") or DEFAULT_MEDIA_TYPE
+        if not isinstance(media_type, str) or not media_type.strip():
+            raise ValueError("tool_input.media_type must be a non-empty string")
 
-    raw_id, raw_path = _resolve_raw(tool_input)
-    if not raw_path.exists():
-        raise FileNotFoundError(f"RAW artifact not found at: {raw_path}")
+        raw_id, raw_path = _resolve_raw(tool_input)
+        if not raw_path.exists():
+            raise FileNotFoundError(f"RAW artifact not found at: {raw_path}")
 
-    sanitized_artifact_id = tool_input.get("sanitized_artifact_id") or f"{raw_id}--sanitized"
-    if not isinstance(sanitized_artifact_id, str) or not sanitized_artifact_id.strip():
-        raise ValueError("tool_input.sanitized_artifact_id must be a non-empty string if provided")
-    sanitized_id = sanitized_artifact_id.strip()
+        sanitized_artifact_id = tool_input.get("sanitized_artifact_id") or f"{raw_id}--sanitized"
+        if not isinstance(sanitized_artifact_id, str) or not sanitized_artifact_id.strip():
+            raise ValueError("tool_input.sanitized_artifact_id must be a non-empty string if provided")
+        sanitized_id = sanitized_artifact_id.strip()
 
-    SANITIZED_DIR.mkdir(parents=True, exist_ok=True)
-    sanitized_path = SANITIZED_DIR / f"{sanitized_id}.jsonl"
+        SANITIZED_DIR.mkdir(parents=True, exist_ok=True)
+        sanitized_path = SANITIZED_DIR / f"{sanitized_id}.jsonl"
 
-    reg = ArtifactRegistry(artifact_root=ARTIFACT_ROOT)
+        reg = ArtifactRegistry(artifact_root=ARTIFACT_ROOT)
 
-    # Idempotency gate (no duplicate registry append)
-    if sanitized_path.exists() and _registry_has(reg.registry_path, sanitized_id, "SANITIZED"):
+        # Idempotency gate (no duplicate registry append)
+        if sanitized_path.exists() and _registry_has(reg.registry_path, sanitized_id, "SANITIZED"):
+            sha = sha256_file(sanitized_path)
+            size = file_size_bytes(sanitized_path)
+            result = {
+                "artifact_id": sanitized_id,
+                "kind": "SANITIZED",
+                "raw_artifact_id": raw_id,
+                "raw_path": str(raw_path),
+                "sanitized_path": str(sanitized_path),
+                "registry_path": str(reg.registry_path),
+                "sha256": sha,
+                "byte_size": size,
+                "media_type": media_type,
+            }
+            log_tool_execution(
+                created_at_utc=created_at_utc,
+                tool_name=TOOL_NAME,
+                status="idempotent",
+                artifact_id=sanitized_id,
+                extra={
+                    "kind": "SANITIZED",
+                    "media_type": media_type,
+                },
+            )
+            return result
+
+        raw_text = raw_path.read_text(encoding="utf-8")
+        sanitized_text = _to_jsonl(_split_statements(raw_text))
+        sanitized_path.write_text(sanitized_text, encoding="utf-8")
+
         sha = sha256_file(sanitized_path)
         size = file_size_bytes(sanitized_path)
-        return {
+
+        reg.append_from_file(
+            artifact_id=sanitized_id,
+            kind="SANITIZED",
+            created_at_utc=created_at_utc,
+            file_path=sanitized_path,
+            media_type=media_type,
+            parent_artifact_ids=[raw_id],
+            notes="artifact.sanitize",
+            tags=["phase7", "sanitized"],
+        )
+
+        result = {
             "artifact_id": sanitized_id,
             "kind": "SANITIZED",
             "raw_artifact_id": raw_id,
@@ -185,33 +228,32 @@ def artifact_sanitize(tool_input: Dict[str, Any]) -> Dict[str, Any]:
             "byte_size": size,
             "media_type": media_type,
         }
+        log_tool_execution(
+            created_at_utc=created_at_utc,
+            tool_name=TOOL_NAME,
+            status="success",
+            artifact_id=sanitized_id,
+            extra={
+                "kind": "SANITIZED",
+                "media_type": media_type,
+            },
+        )
+        return result
 
-    raw_text = raw_path.read_text(encoding="utf-8")
-    sanitized_text = _to_jsonl(_split_statements(raw_text))
-    sanitized_path.write_text(sanitized_text, encoding="utf-8")
-
-    sha = sha256_file(sanitized_path)
-    size = file_size_bytes(sanitized_path)
-
-    reg.append_from_file(
-        artifact_id=sanitized_id,
-        kind="SANITIZED",
-        created_at_utc=created_at_utc,
-        file_path=sanitized_path,
-        media_type=media_type,
-        parent_artifact_ids=[raw_id],
-        notes="artifact.sanitize",
-        tags=["phase7", "sanitized"],
-    )
-
-    return {
-        "artifact_id": sanitized_id,
-        "kind": "SANITIZED",
-        "raw_artifact_id": raw_id,
-        "raw_path": str(raw_path),
-        "sanitized_path": str(sanitized_path),
-        "registry_path": str(reg.registry_path),
-        "sha256": sha,
-        "byte_size": size,
-        "media_type": media_type,
-    }
+    except Exception as e:
+        # Best-effort error log; do not alter exception semantics.
+        try:
+            sanitized_id = locals().get("sanitized_id")
+            log_tool_execution(
+                created_at_utc=created_at_utc,
+                tool_name=TOOL_NAME,
+                status="error",
+                artifact_id=sanitized_id if isinstance(sanitized_id, str) else None,
+                extra={
+                    "error_type": type(e).__name__,
+                    "error_message": str(e),
+                },
+            )
+        except Exception:
+            pass
+        raise
