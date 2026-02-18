@@ -20,3 +20,6 @@ env/
 # AdamOS runtime state
 .adam_os/
 _real_inputs/
+
+# Code Shuttle (local, untracked)
+_debug/
