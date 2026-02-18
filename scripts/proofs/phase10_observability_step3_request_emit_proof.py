@@ -9,7 +9,7 @@ from adam_os.tools.engineering_log_append import DEFAULT_ACTIVITY_LOG_PATH
 
 
 def _snapshot_hash64() -> str:
-    head = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode().strip()
+    head = subprocess.check_output(["git","rev-parse","HEAD"]).decode().strip()
     return hashlib.sha256(head.encode("utf-8")).hexdigest()
 
 
@@ -43,7 +43,8 @@ def main() -> None:
     assert "\"event_type\":\"tool_execute\"" in last
     assert "\"tool_name\":\"inference.request_emit\"" in last
     assert "\"status\":\"success\"" in last
-    assert f"\"request_id\":\"{out[\"artifact_id\"]}\"" in last
+    needle = "\"request_id\":\"" + out["artifact_id"] + "\""
+    assert needle in last
 
     print("OK: request_emit produced request + logged tool_execute")
     print("REQUEST_ID:", out["artifact_id"])
