@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict
 
+from adam_os.engineering.activity_events import log_tool_execution
 from adam_os.providers.openai_responses import OpenAIHTTPError
 from adam_os.providers.anthropic_messages import AnthropicHTTPError
 from adam_os.providers.dispatch import dispatch_text
@@ -137,6 +138,15 @@ def inference_execute(tool_input: Dict[str, Any]) -> Dict[str, Any]:
             }
         )
 
+        log_tool_execution(
+            created_at_utc=created_at_utc_s,
+            tool_name=TOOL_NAME,
+            status="success",
+            request_id=request_id_s,
+            artifact_id=(out_resp.get("artifact_id") if isinstance(out_resp, dict) else None),
+            extra={"kind": "INFERENCE_RESPONSE", "idempotent": False},
+        )
+
         return {
             "ok": True,
             "provider_response_id": r.provider_response_id,
@@ -171,8 +181,17 @@ def inference_execute(tool_input: Dict[str, Any]) -> Dict[str, Any]:
             }
         )
 
-        return {"ok": False, "emitted_error": out_err, "emitted_receipt": out_receipt}
+        log_tool_execution(
+            created_at_utc=created_at_utc_s,
+            tool_name=TOOL_NAME,
+            status="error",
+            request_id=request_id_s,
+            artifact_id=(out_err.get("artifact_id") if isinstance(out_err, dict) else None),
+            error_id=error_id,
+            extra={"kind": "INFERENCE_ERROR", "idempotent": False},
+        )
 
+        return {"ok": False, "emitted_error": out_err, "emitted_receipt": out_receipt}
 
     except AnthropicHTTPError as e:
         out_err = inference_error_emit(
@@ -199,6 +218,16 @@ def inference_execute(tool_input: Dict[str, Any]) -> Dict[str, Any]:
                 "model": model_s,
                 "error_id": error_id,
             }
+        )
+
+        log_tool_execution(
+            created_at_utc=created_at_utc_s,
+            tool_name=TOOL_NAME,
+            status="error",
+            request_id=request_id_s,
+            artifact_id=(out_err.get("artifact_id") if isinstance(out_err, dict) else None),
+            error_id=error_id,
+            extra={"kind": "INFERENCE_ERROR", "idempotent": False},
         )
 
         return {"ok": False, "emitted_error": out_err, "emitted_receipt": out_receipt}
@@ -233,6 +262,17 @@ def inference_execute(tool_input: Dict[str, Any]) -> Dict[str, Any]:
                     "error_id": error_id,
                 }
             )
+
+            log_tool_execution(
+                created_at_utc=created_at_utc_s,
+                tool_name=TOOL_NAME,
+                status="error",
+                request_id=request_id_s,
+                artifact_id=(out_err.get("artifact_id") if isinstance(out_err, dict) else None),
+                error_id=error_id,
+                extra={"kind": "INFERENCE_ERROR", "idempotent": False},
+            )
+
             return {"ok": False, "emitted_error": out_err, "emitted_receipt": out_receipt}
 
         out_err = inference_error_emit(
@@ -259,36 +299,15 @@ def inference_execute(tool_input: Dict[str, Any]) -> Dict[str, Any]:
                 "error_id": error_id,
             }
         )
-        return {"ok": False, "emitted_error": out_err, "emitted_receipt": out_receipt}
 
-    except Exception as e:
-        msg = str(e)
-        etype = "provider_http_error" if provider_s == "anthropic" and (msg.startswith("ANTHROPIC_") or msg.startswith("anthropic_")) else "inference_execute_error"
-
-        out_err = inference_error_emit(
-            {
-                "created_at_utc": created_at_utc_s,
-                "request_id": request_id_s,
-                "request_hash": request_hash,
-                "snapshot_hash": snapshot_hash,
-                "provider": provider_s,
-                "model": model_s,
-                "error_type": etype,
-                "message": msg,
-                "error_id": error_id,
-            }
-        )
-
-        out_receipt = inference_receipt_emit(
-            {
-                "created_at_utc": created_at_utc_s,
-                "request_id": request_id_s,
-                "request_hash": request_hash,
-                "snapshot_hash": snapshot_hash,
-                "provider": provider_s,
-                "model": model_s,
-                "error_id": error_id,
-            }
+        log_tool_execution(
+            created_at_utc=created_at_utc_s,
+            tool_name=TOOL_NAME,
+            status="error",
+            request_id=request_id_s,
+            artifact_id=(out_err.get("artifact_id") if isinstance(out_err, dict) else None),
+            error_id=error_id,
+            extra={"kind": "INFERENCE_ERROR", "idempotent": False},
         )
 
         return {"ok": False, "emitted_error": out_err, "emitted_receipt": out_receipt}
