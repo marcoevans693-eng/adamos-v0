@@ -2,7 +2,7 @@
 
 Standardized event constructors for the Engineering Activity Log.
 
-Scope (Step 2):
+Scope (Phase 10 Step 2):
 - Provide uniform event shapes for common actions (tool execution)
 - Append via append_engineering_event (from tools module)
 - Still standalone: NOT wired into other tools yet

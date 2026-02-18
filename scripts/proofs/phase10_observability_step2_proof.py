@@ -15,10 +15,6 @@ from adam_os.engineering.activity_events import log_tool_execution
 from adam_os.tools.engineering_log_append import DEFAULT_ACTIVITY_LOG_PATH
 
 
-def _last_appended_bytes(before_len: int, after: bytes) -> bytes:
-    return after[before_len:]
-
-
 def main() -> None:
     log_path = Path(DEFAULT_ACTIVITY_LOG_PATH)
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -41,19 +37,20 @@ def main() -> None:
     # exactly one additional line
     assert len(after_lines) == len(before_lines) + 1, (len(before_lines), len(after_lines))
 
-    appended = _last_appended_bytes(len(before), after)
+    appended = after[len(before):]
     assert appended.endswith(b"\n"), "appended bytes must end with newline"
 
     expected_sha = hashlib.sha256(appended).hexdigest()
     assert sha == expected_sha, (sha, expected_sha)
 
-    # minimal content check (string match on the appended line)
     line = appended.decode("utf-8")
-    assert ""event_type":"tool_execute"" in line
-    assert ""tool_name":"phase10_observability_step2_proof"" in line
-    assert ""status":"success"" in line
-    assert ""request_id":"req_dummy"" in line
-    assert ""note":"step2"" in line
+
+    # minimal content check (JSONL contains these substrings)
+    assert '"event_type":"tool_execute"' in line
+    assert '"tool_name":"phase10_observability_step2_proof"' in line
+    assert '"status":"success"' in line
+    assert '"request_id":"req_dummy"' in line
+    assert '"note":"step2"' in line
 
     print("OK: step2 wrapper appended 1 line")
     print(f"LOG_PATH: {log_path}")
