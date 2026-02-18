@@ -17,6 +17,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict
 
+from adam_os.engineering.activity_events import log_tool_execution
 from adam_os.inference.registry import InferenceArtifactRegistry
 from adam_os.artifacts.registry import sha256_file, file_size_bytes
 
@@ -82,6 +83,9 @@ def inference_response_emit(tool_input: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(media_type, str) or not media_type.strip():
         raise ValueError("media_type must be a non-empty string")
 
+    created_at_utc_s = created_at_utc.strip()
+    request_id_s = request_id.strip()
+
     RESPONSES_DIR.mkdir(parents=True, exist_ok=True)
     response_path = RESPONSES_DIR / f"{response_id}.json"
 
@@ -91,6 +95,16 @@ def inference_response_emit(tool_input: Dict[str, Any]) -> Dict[str, Any]:
     if response_path.exists() and _registry_has(reg.registry_path, response_id, "INFERENCE_RESPONSE"):
         sha = sha256_file(response_path)
         size = file_size_bytes(response_path)
+
+        log_tool_execution(
+            created_at_utc=created_at_utc_s,
+            tool_name=TOOL_NAME,
+            status="success",
+            request_id=request_id_s,
+            artifact_id=response_id,
+            extra={"kind": "INFERENCE_RESPONSE", "idempotent": True},
+        )
+
         return {
             "artifact_id": response_id,
             "kind": "INFERENCE_RESPONSE",
@@ -103,8 +117,8 @@ def inference_response_emit(tool_input: Dict[str, Any]) -> Dict[str, Any]:
 
     obj = {
         "kind": "inference.response",
-        "created_at_utc": created_at_utc,
-        "request_id": request_id.strip(),
+        "created_at_utc": created_at_utc_s,
+        "request_id": request_id_s,
         "request_hash": request_hash,
         "snapshot_hash": snapshot_hash,
         "provider": provider.strip(),
@@ -121,12 +135,21 @@ def inference_response_emit(tool_input: Dict[str, Any]) -> Dict[str, Any]:
     reg.append_from_file(
         artifact_id=response_id,
         kind="INFERENCE_RESPONSE",
-        created_at_utc=created_at_utc,
+        created_at_utc=created_at_utc_s,
         file_path=response_path,
         media_type=media_type,
-        parent_artifact_ids=[request_id.strip()],
+        parent_artifact_ids=[request_id_s],
         notes="inference.response_emit",
         tags=["phase8", "inference", "response"],
+    )
+
+    log_tool_execution(
+        created_at_utc=created_at_utc_s,
+        tool_name=TOOL_NAME,
+        status="success",
+        request_id=request_id_s,
+        artifact_id=response_id,
+        extra={"kind": "INFERENCE_RESPONSE", "idempotent": False},
     )
 
     return {
