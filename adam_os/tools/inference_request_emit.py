@@ -48,7 +48,6 @@ def inference_request_emit(tool_input: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(tool_input, dict):
         raise TypeError("tool_input must be dict")
 
-    # We only log once we have a request_id and created_at_utc (derived from validated contract).
     try:
         req = build_inference_request(tool_input)
 
@@ -75,10 +74,7 @@ def inference_request_emit(tool_input: Dict[str, Any]) -> Dict[str, Any]:
                 status="success",
                 request_id=request_id,
                 artifact_id=request_id,
-                extra={
-                    "kind": "INFERENCE_REQUEST",
-                    "idempotent": True,
-                },
+                extra={"kind": "INFERENCE_REQUEST", "idempotent": True},
             )
 
             return {
@@ -116,10 +112,7 @@ def inference_request_emit(tool_input: Dict[str, Any]) -> Dict[str, Any]:
             status="success",
             request_id=request_id,
             artifact_id=request_id,
-            extra={
-                "kind": "INFERENCE_REQUEST",
-                "idempotent": False,
-            },
+            extra={"kind": "INFERENCE_REQUEST", "idempotent": False},
         )
 
         return {
@@ -134,22 +127,20 @@ def inference_request_emit(tool_input: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     except Exception as e:
-        # Best-effort observability without changing semantics:
-        # - If created_at_utc/request_id are unavailable, we do not log.
         try:
             created_at_utc = req.get("created_at_utc")  # type: ignore[name-defined]
             request_id = req.get("request_id")          # type: ignore[name-defined]
-            if isinstance(created_at_utc, str) and created_at_utc.strip() and isinstance(request_id, str) and request_id.strip():
+            if (
+                isinstance(created_at_utc, str) and created_at_utc.strip()
+                and isinstance(request_id, str) and request_id.strip()
+            ):
                 log_tool_execution(
                     created_at_utc=created_at_utc,
                     tool_name=TOOL_NAME,
                     status="error",
                     request_id=request_id,
                     artifact_id=request_id,
-                    extra={
-                        "error_type": type(e).__name__,
-                        "error": str(e),
-                    },
+                    extra={"error_type": type(e).__name__, "error": str(e)},
                 )
         except Exception:
             pass
