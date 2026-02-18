@@ -44,6 +44,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from adam_os.artifacts.registry import ArtifactRegistry, sha256_file, file_size_bytes
+from adam_os.engineering.activity_events import log_tool_execution
 from adam_os.memory.canonical import canonical_dumps, sha256_hex
 
 
@@ -146,154 +147,196 @@ def artifact_build_spec(tool_input: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(created_at_utc, str) or not created_at_utc.strip():
         raise ValueError("tool_input.created_at_utc must be a non-empty injected string")
 
-    media_type = tool_input.get("media_type") or DEFAULT_MEDIA_TYPE
-    if not isinstance(media_type, str) or not media_type.strip():
-        raise ValueError("tool_input.media_type must be a non-empty string")
+    try:
+        media_type = tool_input.get("media_type") or DEFAULT_MEDIA_TYPE
+        if not isinstance(media_type, str) or not media_type.strip():
+            raise ValueError("tool_input.media_type must be a non-empty string")
 
-    bundle_artifact_id = tool_input.get("bundle_artifact_id")
-    if not isinstance(bundle_artifact_id, str) or not bundle_artifact_id.strip():
-        raise ValueError("tool_input.bundle_artifact_id must be a non-empty string")
-    bundle_id = bundle_artifact_id.strip()
+        bundle_artifact_id = tool_input.get("bundle_artifact_id")
+        if not isinstance(bundle_artifact_id, str) or not bundle_artifact_id.strip():
+            raise ValueError("tool_input.bundle_artifact_id must be a non-empty string")
+        bundle_id = bundle_artifact_id.strip()
 
-    provider = tool_input.get("provider")
-    if not isinstance(provider, str) or not provider.strip():
-        raise ValueError("tool_input.provider must be a non-empty string")
+        provider = tool_input.get("provider")
+        if not isinstance(provider, str) or not provider.strip():
+            raise ValueError("tool_input.provider must be a non-empty string")
 
-    model = tool_input.get("model")
-    if not isinstance(model, str) or not model.strip():
-        raise ValueError("tool_input.model must be a non-empty string")
+        model = tool_input.get("model")
+        if not isinstance(model, str) or not model.strip():
+            raise ValueError("tool_input.model must be a non-empty string")
 
-    temperature = _normalize_temperature(tool_input.get("temperature"))
-    max_tokens = _normalize_max_tokens(tool_input.get("max_tokens"))
+        temperature = _normalize_temperature(tool_input.get("temperature"))
+        max_tokens = _normalize_max_tokens(tool_input.get("max_tokens"))
 
-    spec_artifact_id = tool_input.get("spec_artifact_id") or f"{bundle_id}--build_spec"
-    if not isinstance(spec_artifact_id, str) or not spec_artifact_id.strip():
-        raise ValueError("tool_input.spec_artifact_id must be a non-empty string if provided")
-    spec_id = spec_artifact_id.strip()
+        spec_artifact_id = tool_input.get("spec_artifact_id") or f"{bundle_id}--build_spec"
+        if not isinstance(spec_artifact_id, str) or not spec_artifact_id.strip():
+            raise ValueError("tool_input.spec_artifact_id must be a non-empty string if provided")
+        spec_id = spec_artifact_id.strip()
 
-    inferred_notes = tool_input.get("inferred_notes")
-    if inferred_notes is not None and not isinstance(inferred_notes, str):
-        raise ValueError("tool_input.inferred_notes must be a string if provided")
+        inferred_notes = tool_input.get("inferred_notes")
+        if inferred_notes is not None and not isinstance(inferred_notes, str):
+            raise ValueError("tool_input.inferred_notes must be a string if provided")
 
-    SPECS_DIR.mkdir(parents=True, exist_ok=True)
-    spec_path = SPECS_DIR / f"{spec_id}.json"
+        SPECS_DIR.mkdir(parents=True, exist_ok=True)
+        spec_path = SPECS_DIR / f"{spec_id}.json"
 
-    reg = ArtifactRegistry(artifact_root=ARTIFACT_ROOT)
+        reg = ArtifactRegistry(artifact_root=ARTIFACT_ROOT)
 
-    # Idempotency gate (no duplicate registry append)
-    if spec_path.exists() and _registry_has(reg.registry_path, spec_id, "BUILD_SPEC"):
+        # Idempotency gate (no duplicate registry append)
+        if spec_path.exists() and _registry_has(reg.registry_path, spec_id, "BUILD_SPEC"):
+            sha = sha256_file(spec_path)
+            size = file_size_bytes(spec_path)
+            try:
+                obj = json.loads(spec_path.read_text(encoding="utf-8"))
+                prompt_hash = obj.get("audit", {}).get("prompt_hash")
+                bundle_hash = obj.get("bundle", {}).get("bundle_hash")
+            except Exception:
+                prompt_hash = None
+                bundle_hash = None
+
+            log_tool_execution(
+                created_at_utc=created_at_utc,
+                tool_name=TOOL_NAME,
+                status="idempotent",
+                artifact_id=spec_id,
+                extra={
+                    "kind": "BUILD_SPEC",
+                    "bundle_artifact_id": bundle_id,
+                },
+            )
+
+            return {
+                "artifact_id": spec_id,
+                "kind": "BUILD_SPEC",
+                "bundle_artifact_id": bundle_id,
+                "spec_path": str(spec_path),
+                "registry_path": str(reg.registry_path),
+                "sha256": sha,
+                "byte_size": size,
+                "media_type": media_type,
+                "prompt_hash": prompt_hash,
+                "bundle_hash": bundle_hash,
+            }
+
+        bundle_path = BUNDLES_DIR / f"{bundle_id}.json"
+        bundle_obj = _read_bundle_manifest(bundle_path)
+        bundle_hash = bundle_obj["bundle_hash"]
+        members = bundle_obj["members"]
+
+        prompt_payload = {
+            "template": _frozen_prompt_template(),
+            "bundle_manifest": {
+                "bundle_id": bundle_obj.get("bundle_id", bundle_id),
+                "bundle_hash": bundle_hash,
+                "members": members,
+            },
+            "inference_settings": {
+                "provider": provider.strip(),
+                "model": model.strip(),
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            },
+        }
+        prompt_canon = canonical_dumps(prompt_payload)
+        prompt_hash = sha256_hex(prompt_canon)
+
+        source_map = {
+            "SOURCE_BASED": list(members),
+            "INFERRED": list(members),
+            "ASSUMPTIONS": list(members),
+            "OPEN_QUESTIONS": list(members),
+        }
+
+        build_spec_obj: Dict[str, Any] = {
+            "artifact_id": spec_id,
+            "kind": "BUILD_SPEC",
+            "created_at_utc": created_at_utc,
+            "bundle": {
+                "bundle_artifact_id": bundle_id,
+                "bundle_hash": bundle_hash,
+            },
+            "audit": {
+                "provider": provider.strip(),
+                "model": model.strip(),
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "prompt_hash": prompt_hash,
+            },
+            "spec": {
+                "SOURCE_BASED": {
+                    "claims": [],
+                    "notes": "Empty by default; populate via governed inference layer in a future adapter, without changing schema.",
+                },
+                "INFERRED": {
+                    "claims": [],
+                    "notes": (inferred_notes or ""),
+                },
+                "ASSUMPTIONS": {
+                    "claims": [],
+                    "notes": "Empty by default; assumptions belong here (explicitly labeled).",
+                },
+                "OPEN_QUESTIONS": [],
+                "SOURCE_MAP": source_map,
+            },
+            "notes": "artifact.build_spec",
+            "tags": ["phase7", "build_spec", "governed_inference_meta"],
+        }
+
+        spec_text = canonical_dumps(build_spec_obj) + "\n"
+        spec_path.write_text(spec_text, encoding="utf-8")
+
         sha = sha256_file(spec_path)
         size = file_size_bytes(spec_path)
-        try:
-            obj = json.loads(spec_path.read_text(encoding="utf-8"))
-            prompt_hash = obj.get("audit", {}).get("prompt_hash")
-            bundle_hash = obj.get("bundle", {}).get("bundle_hash")
-        except Exception:
-            prompt_hash = None
-            bundle_hash = None
+
+        reg.append_from_file(
+            artifact_id=spec_id,
+            kind="BUILD_SPEC",
+            created_at_utc=created_at_utc,
+            file_path=spec_path,
+            media_type=media_type,
+            parent_artifact_ids=[bundle_id],
+            notes="artifact.build_spec",
+            tags=["phase7", "build_spec"],
+        )
+
+        log_tool_execution(
+            created_at_utc=created_at_utc,
+            tool_name=TOOL_NAME,
+            status="success",
+            artifact_id=spec_id,
+            extra={
+                "kind": "BUILD_SPEC",
+                "bundle_artifact_id": bundle_id,
+            },
+        )
+
         return {
             "artifact_id": spec_id,
             "kind": "BUILD_SPEC",
             "bundle_artifact_id": bundle_id,
+            "bundle_hash": bundle_hash,
             "spec_path": str(spec_path),
             "registry_path": str(reg.registry_path),
             "sha256": sha,
             "byte_size": size,
             "media_type": media_type,
             "prompt_hash": prompt_hash,
-            "bundle_hash": bundle_hash,
         }
 
-    bundle_path = BUNDLES_DIR / f"{bundle_id}.json"
-    bundle_obj = _read_bundle_manifest(bundle_path)
-    bundle_hash = bundle_obj["bundle_hash"]
-    members = bundle_obj["members"]
-
-    prompt_payload = {
-        "template": _frozen_prompt_template(),
-        "bundle_manifest": {
-            "bundle_id": bundle_obj.get("bundle_id", bundle_id),
-            "bundle_hash": bundle_hash,
-            "members": members,
-        },
-        "inference_settings": {
-            "provider": provider.strip(),
-            "model": model.strip(),
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        },
-    }
-    prompt_canon = canonical_dumps(prompt_payload)
-    prompt_hash = sha256_hex(prompt_canon)
-
-    source_map = {
-        "SOURCE_BASED": list(members),
-        "INFERRED": list(members),
-        "ASSUMPTIONS": list(members),
-        "OPEN_QUESTIONS": list(members),
-    }
-
-    build_spec_obj: Dict[str, Any] = {
-        "artifact_id": spec_id,
-        "kind": "BUILD_SPEC",
-        "created_at_utc": created_at_utc,
-        "bundle": {
-            "bundle_artifact_id": bundle_id,
-            "bundle_hash": bundle_hash,
-        },
-        "audit": {
-            "provider": provider.strip(),
-            "model": model.strip(),
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-            "prompt_hash": prompt_hash,
-        },
-        "spec": {
-            "SOURCE_BASED": {
-                "claims": [],
-                "notes": "Empty by default; populate via governed inference layer in a future adapter, without changing schema.",
-            },
-            "INFERRED": {
-                "claims": [],
-                "notes": (inferred_notes or ""),
-            },
-            "ASSUMPTIONS": {
-                "claims": [],
-                "notes": "Empty by default; assumptions belong here (explicitly labeled).",
-            },
-            "OPEN_QUESTIONS": [],
-            "SOURCE_MAP": source_map,
-        },
-        "notes": "artifact.build_spec",
-        "tags": ["phase7", "build_spec", "governed_inference_meta"],
-    }
-
-    spec_text = canonical_dumps(build_spec_obj) + "\n"
-    spec_path.write_text(spec_text, encoding="utf-8")
-
-    sha = sha256_file(spec_path)
-    size = file_size_bytes(spec_path)
-
-    reg.append_from_file(
-        artifact_id=spec_id,
-        kind="BUILD_SPEC",
-        created_at_utc=created_at_utc,
-        file_path=spec_path,
-        media_type=media_type,
-        parent_artifact_ids=[bundle_id],
-        notes="artifact.build_spec",
-        tags=["phase7", "build_spec"],
-    )
-
-    return {
-        "artifact_id": spec_id,
-        "kind": "BUILD_SPEC",
-        "bundle_artifact_id": bundle_id,
-        "bundle_hash": bundle_hash,
-        "spec_path": str(spec_path),
-        "registry_path": str(reg.registry_path),
-        "sha256": sha,
-        "byte_size": size,
-        "media_type": media_type,
-        "prompt_hash": prompt_hash,
-    }
+    except Exception as e:
+        # Best-effort error log; do not alter exception semantics.
+        try:
+            artifact_id = locals().get("spec_id")
+            log_tool_execution(
+                created_at_utc=created_at_utc,
+                tool_name=TOOL_NAME,
+                status="error",
+                artifact_id=artifact_id if isinstance(artifact_id, str) else None,
+                extra={
+                    "exception_type": type(e).__name__,
+                    "exception_message": str(e),
+                },
+            )
+        except Exception:
+            pass
+        raise
