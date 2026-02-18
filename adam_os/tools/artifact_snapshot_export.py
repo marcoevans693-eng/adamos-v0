@@ -35,6 +35,7 @@ from typing import Any, Dict, List, Tuple
 
 from adam_os.artifacts.registry import ArtifactRegistry, sha256_file, file_size_bytes
 from adam_os.memory.canonical import canonical_dumps
+from adam_os.engineering.activity_events import log_tool_execution
 
 
 TOOL_NAME = "artifact.snapshot_export"
