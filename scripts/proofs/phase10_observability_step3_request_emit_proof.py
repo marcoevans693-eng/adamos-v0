@@ -26,12 +26,11 @@ def main() -> None:
         "snapshot_hash": snap,
         "provider": "openai",
         "model": "gpt-4.1-mini",
-        "input": [
-            {"role": "system", "content": "You are a deterministic test system."},
-            {"role": "user", "content": "Return the string OK."},
-        ],
+        "system_prompt": "You are a deterministic test system.",
+        "user_prompt": "Return the string OK.",
         "temperature": 0.0,
-        "max_output_tokens": 16,
+        "max_tokens": 16,
+        "provider_max_tokens_cap": 256,
     }
 
     out = inference_request_emit(tool_input)
